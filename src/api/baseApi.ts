@@ -1,11 +1,3 @@
-/**
- * RTK Query base API with:
- *  - Cookie-based auth (credentials: 'include')
- *  - Automatic 401 → refresh token → retry flow
- *  - Backend envelope unwrapping ({ statusCode, result } → result)
- *  - Normalized error format
- */
-
 import {
   createApi,
   fetchBaseQuery,
@@ -15,6 +7,8 @@ import {
 } from "@reduxjs/toolkit/query/react";
 import type { ApiResponse, ApiError } from "./apiTypes";
 import { env } from "@/config/env";
+import { clearAuth } from "@/features/authSlice";
+import { ExceptionCodes } from "@/constants/exceptionCodes";
 
 const BASE_URL = env.API_BASE_URL;
 
@@ -69,11 +63,22 @@ const baseQueryWithRefresh: BaseQueryFn<
 > = async (args, api, extraOptions) => {
   let result = await rawBaseQuery(args, api, extraOptions);
 
-  // Handle 401 — attempt refresh and retry
+  // Handle 401s — attempt refresh+retry OR logout
+  const errData = result.error?.data as ApiError | undefined;
   if (result.error && result.error.status === 401) {
-    const refreshed = await ensureRefresh();
-    if (refreshed) {
-      result = await rawBaseQuery(args, api, extraOptions);
+    if (
+      errData?.exceptionCode === ExceptionCodes.TOKEN_EXPIRED ||
+      errData?.exceptionCode === ExceptionCodes.AUTH_REQUIRED
+    ) {
+      const refreshed = await ensureRefresh();
+
+      if (refreshed) {
+        result = await rawBaseQuery(args, api, extraOptions);
+      } else {
+        api.dispatch(clearAuth()); // refresh failed
+      }
+    } else if (errData?.exceptionCode === ExceptionCodes.INVALID_TOKEN) {
+      api.dispatch(clearAuth());
     }
   }
 
