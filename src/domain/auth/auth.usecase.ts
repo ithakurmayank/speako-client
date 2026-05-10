@@ -5,83 +5,103 @@
  *  - useHydrateX → fetch + store data
  *  - usePersistX → create/update/delete operations
  *
- * Uses RTK Query hooks for API calls, mappers for transformation,
- * and dispatches results to Redux.
+ * Every use case awaits `.unwrap()` inside a `try/catch`. Errors are
+ * swallowed because `baseApi` toasts them centrally; consumers read
+ * `isLoading` / `isSuccess` from RTK Query for UI flow decisions.
  */
 
 import { useCallback } from "react";
 import { useAppDispatch } from "@/app/store";
-import { setUser, clearAuth } from "@/features/authSlice";
+import { clearAuth } from "@/features/authSlice";
 import {
   useLoginMutation,
   useRegisterMutation,
+  useRefreshMutation,
   useLogoutMutation,
+  useForgotPasswordMutation,
+  useResetPasswordMutation,
+  useVerifyEmailMutation,
+  useResendVerificationMutation,
 } from "@/api/authApi";
-import { mapUserDtoToUser } from "./auth.mapper";
-import type { LoginRequest, RegisterRequest } from "@/types/auth";
+import {
+  mapLoginVOToDTO,
+  mapRegisterVOToDTO,
+  mapForgotPasswordVOToDTO,
+  mapResetPasswordVOToDTO,
+  mapVerifyEmailVOToDTO,
+} from "./auth.mapper";
+import type {
+  LoginVO,
+  RegisterVO,
+  ForgotPasswordVO,
+  ResetPasswordVO,
+  VerifyEmailVO,
+} from "@/types/auth";
 import { baseApi } from "@/api/baseApi";
 
 /**
- * Hydrate current user profile into Redux.
- */
-// const useHydrateUser = () => {
-//   console.log("useHydrateUser called");
-//   const [fetchProfile, { isLoading }] = useLazyGetMyProfileQuery();
-//   const dispatch = useAppDispatch();
-
-//   const hydrateUser = useCallback(async () => {
-//     const profile = await fetchProfile().unwrap();
-//     const user = mapUserDtoToUser({
-//       _id: profile._id,
-//       name: profile.name,
-//       username: profile.username ?? "",
-//       email: profile.email ?? "",
-//     });
-//     dispatch(setUser(user));
-//     return user;
-//   }, [fetchProfile, dispatch]);
-
-//   return { hydrateUser, isLoading };
-// };
-
-/**
- * Login use case — authenticate and store user in Redux.
+ * Login use case — authenticate. Session is established via cookies.
+ * Consumers read `isSuccess` to decide when to navigate.
  */
 const usePersistLogin = () => {
-  const [loginMutation, { isLoading }] = useLoginMutation();
+  const [loginMutation, { isLoading, isSuccess }] = useLoginMutation();
 
   const login = useCallback(
-    async (credentials: LoginRequest) => {
-      await loginMutation(credentials).unwrap();
+    async (vo: LoginVO) => {
+      try {
+        await loginMutation(mapLoginVOToDTO(vo)).unwrap();
+      } catch {
+        /* errors surfaced via toasts in baseApi */
+      }
     },
     [loginMutation],
   );
 
-  return { login, isLoading };
+  return { login, isLoading, isSuccess };
 };
 
 /**
- * Register use case — create account and store user in Redux.
+ * Register use case — create account. Session cookies are set by the server;
+ * the user record will be hydrated by `useGetMeQuery` after navigation.
+ * Consumers read `isSuccess` to decide when to navigate.
  */
 const usePersistRegister = () => {
-  const [registerMutation, { isLoading }] = useRegisterMutation();
-  const dispatch = useAppDispatch();
+  const [registerMutation, { isLoading, isSuccess }] = useRegisterMutation();
 
   const register = useCallback(
-    async (data: RegisterRequest) => {
-      const response = await registerMutation(data).unwrap();
-      const user = mapUserDtoToUser(response.user);
-      dispatch(setUser(user));
-      return user;
+    async (vo: RegisterVO) => {
+      try {
+        await registerMutation(mapRegisterVOToDTO(vo)).unwrap();
+      } catch {
+        /* errors surfaced via toasts in baseApi */
+      }
     },
-    [registerMutation, dispatch],
+    [registerMutation],
   );
 
-  return { register, isLoading };
+  return { register, isLoading, isSuccess };
 };
 
 /**
- * Logout use case — clear auth state.
+ * Refresh use case — manually trigger a token refresh.
+ * Note: baseApi already performs silent refresh on 401, so this is rarely used directly.
+ */
+const usePersistRefresh = () => {
+  const [refreshMutation, { isLoading }] = useRefreshMutation();
+
+  const refresh = useCallback(async () => {
+    try {
+      await refreshMutation().unwrap();
+    } catch {
+      /* errors surfaced via toasts in baseApi */
+    }
+  }, [refreshMutation]);
+
+  return { refresh, isLoading };
+};
+
+/**
+ * Logout use case — clear server session and local auth state.
  */
 const usePersistLogout = () => {
   const [logoutMutation] = useLogoutMutation();
@@ -90,18 +110,102 @@ const usePersistLogout = () => {
   const logout = useCallback(async () => {
     try {
       await logoutMutation().unwrap();
-      // reset the whole api state(cached data, tags etc) so that in <PublicRoute/> - useGetMeQuery doesn't return cached data and is refetched
+      // reset the whole api state so PublicRoute's useGetMeQuery refetches
       dispatch(baseApi.util.resetApiState());
       dispatch(clearAuth());
-    } catch {}
+    } catch {
+      /* errors are surfaced via toasts in baseApi */
+    }
   }, [logoutMutation, dispatch]);
 
   return { logout };
 };
 
+/**
+ * Forgot password use case — request OTP email.
+ */
+const usePersistForgotPassword = () => {
+  const [forgotPasswordMutation, { isLoading }] = useForgotPasswordMutation();
+
+  const forgotPassword = useCallback(
+    async (vo: ForgotPasswordVO) => {
+      try {
+        await forgotPasswordMutation(mapForgotPasswordVOToDTO(vo)).unwrap();
+      } catch {
+        /* errors surfaced via toasts in baseApi */
+      }
+    },
+    [forgotPasswordMutation],
+  );
+
+  return { forgotPassword, isLoading };
+};
+
+/**
+ * Reset password use case — submit OTP + new password.
+ */
+const usePersistResetPassword = () => {
+  const [resetPasswordMutation, { isLoading }] = useResetPasswordMutation();
+
+  const resetPassword = useCallback(
+    async (vo: ResetPasswordVO) => {
+      try {
+        await resetPasswordMutation(mapResetPasswordVOToDTO(vo)).unwrap();
+      } catch {
+        /* errors surfaced via toasts in baseApi */
+      }
+    },
+    [resetPasswordMutation],
+  );
+
+  return { resetPassword, isLoading };
+};
+
+/**
+ * Verify email use case — submit email-verification OTP.
+ */
+const usePersistVerifyEmail = () => {
+  const [verifyEmailMutation, { isLoading }] = useVerifyEmailMutation();
+
+  const verifyEmail = useCallback(
+    async (vo: VerifyEmailVO) => {
+      try {
+        await verifyEmailMutation(mapVerifyEmailVOToDTO(vo)).unwrap();
+      } catch {
+        /* errors surfaced via toasts in baseApi */
+      }
+    },
+    [verifyEmailMutation],
+  );
+
+  return { verifyEmail, isLoading };
+};
+
+/**
+ * Resend verification OTP use case.
+ */
+const usePersistResendVerification = () => {
+  const [resendVerificationMutation, { isLoading }] =
+    useResendVerificationMutation();
+
+  const resendVerification = useCallback(async () => {
+    try {
+      await resendVerificationMutation().unwrap();
+    } catch {
+      /* errors surfaced via toasts in baseApi */
+    }
+  }, [resendVerificationMutation]);
+
+  return { resendVerification, isLoading };
+};
+
 export {
-  //   useHydrateUser,
   usePersistLogin,
   usePersistRegister,
+  usePersistRefresh,
   usePersistLogout,
+  usePersistForgotPassword,
+  usePersistResetPassword,
+  usePersistVerifyEmail,
+  usePersistResendVerification,
 };
