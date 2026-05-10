@@ -1,46 +1,53 @@
-import { useAppSelector } from '@/app/store';
-import { channels, conversations, userMap } from '@/data/mockData';
-import { Hash, Megaphone, Lock, Users, Pin, Info } from 'lucide-react';
-import { useMemo } from 'react';
+import { useAppSelector } from "@/app/store";
+import { channels, conversations, userMap } from "@/data/mockData";
+import { Hash, Megaphone, Lock, Users, Pin, Info } from "lucide-react";
+import { useMemo } from "react";
 
 const ChatHeader = () => {
-  const { activeChatContext } = useAppSelector(s => s.ui);
-  const currentUser = useAppSelector(s => s.auth.user);
+  const { activeChatContext } = useAppSelector((s) => s.ui);
+  const currentUser = useAppSelector((s) => s.auth.user);
 
   const headerData = useMemo(() => {
     if (!activeChatContext) return null;
 
-    let name = '';
-    let description = '';
+    let name = "";
+    let description = "";
     let icon: React.ReactNode = null;
     let memberCount = 0;
 
-    if (activeChatContext.type === 'channel') {
-      const channel = channels.find(c => c._id === activeChatContext.id);
+    if (activeChatContext.type === "channel") {
+      const channel = channels.find((c) => c._id === activeChatContext.id);
       if (channel) {
         name = channel.name;
-        description = channel.description || '';
+        description = channel.description || "";
         memberCount = channel.memberCount;
-        const IconComp = channel.type === 'announcement' ? Megaphone : channel.isPrivate ? Lock : Hash;
+        const IconComp =
+          channel.type === "announcement"
+            ? Megaphone
+            : channel.isPrivate
+              ? Lock
+              : Hash;
         icon = <IconComp className="w-5 h-5 text-muted-foreground" />;
       }
     } else {
-      const conv = conversations.find(c => c._id === activeChatContext.id);
+      const conv = conversations.find((c) => c._id === activeChatContext.id);
       if (conv) {
-        if (conv.type === 'group') {
-          name = conv.name || 'Group Chat';
+        if (conv.type === "group") {
+          name = conv.name || "Group Chat";
           memberCount = conv.participants.length;
           icon = <Users className="w-5 h-5 text-muted-foreground" />;
         } else {
-          const other = conv.participants.find(p => p.userId !== currentUser?._id);
+          const other = conv.participants.find(
+            (p) => p.userId !== currentUser?.id,
+          );
           const otherUser = other ? userMap[other.userId] : null;
-          name = otherUser?.name || 'Unknown';
+          name = otherUser?.name || "Unknown";
         }
       }
     }
 
     return { name, description, icon, memberCount };
-  }, [activeChatContext, currentUser?._id]);
+  }, [activeChatContext, currentUser?.id]);
 
   if (!headerData) return null;
 
@@ -50,7 +57,9 @@ const ChatHeader = () => {
     <header className="h-14 min-h-[56px] border-b border-border flex items-center justify-between px-4 md:px-6 bg-card">
       <div className="flex items-center gap-2 min-w-0">
         {icon}
-        <h1 className="text-base font-semibold text-card-foreground truncate">{name}</h1>
+        <h1 className="text-base font-semibold text-card-foreground truncate">
+          {name}
+        </h1>
         {description && (
           <span className="hidden md:inline text-xs text-muted-foreground truncate max-w-[200px] border-l border-border pl-2 ml-1">
             {description}

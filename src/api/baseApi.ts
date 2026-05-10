@@ -5,10 +5,20 @@ import {
   type FetchArgs,
   type FetchBaseQueryError,
 } from "@reduxjs/toolkit/query/react";
+import { toast } from "sonner";
 import type { ApiResponse, ApiError } from "./apiTypes";
 import { env } from "@/config/env";
 import { clearAuth } from "@/features/authSlice";
 import { ExceptionCodes } from "@/constants/exceptionCodes";
+import { ALL_TAGS } from "./tags";
+
+const SUPPRESSED_TOAST_EXCEPTIONS = new Set<string>([
+  ExceptionCodes.TOKEN_EXPIRED,
+  ExceptionCodes.INVALID_TOKEN,
+  ExceptionCodes.AUTH_REQUIRED,
+]);
+
+const FALLBACK_ERROR_MESSAGE = "Something went wrong";
 
 const BASE_URL = env.API_BASE_URL;
 
@@ -16,6 +26,9 @@ const rawBaseQuery = fetchBaseQuery({
   baseUrl: BASE_URL,
   credentials: "include", // send cookies (access + refresh tokens)
   prepareHeaders: (headers) => {
+    // to prevent ERR_NGROK_6024 error in response headers. TODO: remove when deploying
+    headers.set("ngrok-skip-browser-warning", "true");
+
     // Cookies are sent automatically; no manual token injection needed
     return headers;
   },
@@ -32,6 +45,10 @@ const refreshAccessToken = async (): Promise<boolean> => {
     const res = await fetch(`${BASE_URL}/auth/refresh`, {
       method: "POST",
       credentials: "include",
+      // to prevent ERR_NGROK_6024 error in response headers. TODO: remove when deploying
+      headers: {
+        "ngrok-skip-browser-warning": "true",
+      },
     });
     return res.ok;
   } catch {
@@ -85,6 +102,12 @@ const baseQueryWithRefresh: BaseQueryFn<
   // Unwrap backend envelope on success
   if (result.data) {
     const envelope = result.data as ApiResponse;
+
+    // Show success toast for mutations only, when backend provides a message
+    if (api.type === "mutation" && envelope.statusMessage?.trim()) {
+      toast.success(envelope.statusMessage);
+    }
+
     return { data: envelope.result };
   }
 
@@ -94,8 +117,17 @@ const baseQueryWithRefresh: BaseQueryFn<
     const apiError: ApiError = {
       status: (result.error.status as number) || 500,
       exceptionCode: serverBody?.exceptionCode ?? null,
-      message: serverBody?.statusMessage ?? "An unexpected error occurred",
+      message: serverBody?.statusMessage ?? FALLBACK_ERROR_MESSAGE,
     };
+
+    // Centralized error toast — suppress noise for expected auth flows
+    if (
+      !apiError.exceptionCode ||
+      !SUPPRESSED_TOAST_EXCEPTIONS.has(apiError.exceptionCode)
+    ) {
+      toast.error(apiError.message);
+    }
+
     return {
       error: {
         status: apiError.status,
@@ -113,18 +145,6 @@ const baseQueryWithRefresh: BaseQueryFn<
 export const baseApi = createApi({
   reducerPath: "api",
   baseQuery: baseQueryWithRefresh,
-  tagTypes: [
-    "User",
-    "Organizations",
-    "Teams",
-    "Channels",
-    "Conversations",
-    "Messages",
-    "ThreadMessages",
-    "ReadStates",
-    "Notifications",
-    "Members",
-    "Me",
-  ],
+  tagTypes: ALL_TAGS,
   endpoints: () => ({}),
 });
